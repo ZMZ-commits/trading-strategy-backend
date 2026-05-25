@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: trading-strategy-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /docs
+    envVars:
+      - key: CORS_ORIGINS
+        sync: false          # Set this to your frontend Render URL, e.g. https://trading-strategy-ui.onrender.com
+      - key: STORE_ROOT
+        value: /tmp/trading-strategies   # Ephemeral on free tier. Upgrade plan + add disk for persistence.

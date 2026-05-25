@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import shutil
 import uuid
@@ -10,8 +11,8 @@ from fastapi import HTTPException
 
 from ..models.strategy import Strategy
 
-STORE_ROOT = Path.home() / "trading-strategies"
-STORE_ROOT.mkdir(exist_ok=True)
+STORE_ROOT = Path(os.getenv("STORE_ROOT", str(Path.home() / "trading-strategies")))
+STORE_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def slugify(name: str) -> str:
