@@ -1,4 +1,4 @@
-app = "trading-strategy-backend-staging"
+app = "trading-strategy-backend-stg"
 primary_region = "iad"
 
 [build]
