@@ -50,11 +50,11 @@ jobs:
       - name: Deploy to Oracle VM
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.ORACLE_HOST }}
-          username: ubuntu
-          key: ${{ secrets.ORACLE_SSH_KEY }}
+          host: ${{ secrets.SSH_HOST }}
+          username: deploy
+          key: ${{ secrets.SSH_KEY }}
           script: |
-            cd /opt/trading-platform/oracle
+            cd /opt/trading-platform/deploy
             docker compose pull ${{ env.SERVICE }}
             docker compose up -d ${{ env.SERVICE }}
             docker image prune -f
