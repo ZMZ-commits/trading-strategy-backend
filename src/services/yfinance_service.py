@@ -1,13 +1,18 @@
 from __future__ import annotations
 import yfinance as yf
 
-RANGE_MAP: dict[str, tuple[str, str]] = {
-    "1D": ("1d", "1m"),
-    "1W": ("5d", "15m"),
-    "1M": ("1mo", "1d"),
-    "1Y": ("1y", "1d"),
-    "5Y": ("5y", "1wk"),
-    "MAX": ("max", "1mo"),
+# (yfinance period, yfinance interval, tail_bars)
+# tail_bars: keep only the last N bars (for intraday windows shorter than a day).
+RANGE_MAP: dict[str, tuple[str, str, int | None]] = {
+    "30M": ("1d", "1m", 30),     # last 30 one-minute bars
+    "1H": ("1d", "1m", 60),      # last hour
+    "5H": ("1d", "1m", 300),     # last 5 hours
+    "1D": ("1d", "1m", None),
+    "1W": ("5d", "15m", None),
+    "1M": ("1mo", "1d", None),
+    "1Y": ("1y", "1d", None),
+    "5Y": ("5y", "1wk", None),
+    "MAX": ("max", "1mo", None),
 }
 
 INDEX_SYMBOLS = ["^GSPC", "^IXIC", "^DJI", "^VIX"]
@@ -15,7 +20,7 @@ INDEX_NAMES = {"^GSPC": "S&P 500", "^IXIC": "NASDAQ", "^DJI": "DOW", "^VIX": "VI
 
 
 def get_history(ticker: str, range_: str) -> dict:
-    period, interval = RANGE_MAP.get(range_.upper(), ("1mo", "1d"))
+    period, interval, tail = RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))
     hist = yf.Ticker(ticker).history(period=period, interval=interval)
     bars = [
         {
@@ -28,6 +33,8 @@ def get_history(ticker: str, range_: str) -> dict:
         }
         for ts, row in hist.iterrows()
     ]
+    if tail is not None:
+        bars = bars[-tail:]
     return {"ticker": ticker.upper(), "range": range_.upper(), "bars": bars}
 
 
