@@ -1,62 +1,70 @@
 """Technical indicators computed server-side from OHLCV.
 
-Hand-rolled with pandas/numpy (no external TA dependency) so the formulas are
-explicit and the install never breaks. Fetches the same yfinance window as the
-chart, computes the requested studies, returns each as a time-aligned series.
+Hand-rolled with pandas/numpy (no external TA dependency). Indicators need
+*lookback* — a 50-period SMA needs 50 prior bars — so we fetch a WARMUP buffer
+larger than the visible window, compute over the full series, then trim to the
+display window. That way indicators span the whole chart instead of only the
+right edge.
 """
 from __future__ import annotations
 import numpy as np
 import pandas as pd
 import yfinance as yf
 
-from .yfinance_service import RANGE_MAP
+
+# range -> (fetch_period, interval, (trim_mode, amount))
+# trim_mode: "tail" keep last N bars, "days" keep last D calendar days, "all".
+IND_CFG: dict[str, tuple[str, str, tuple[str, int]]] = {
+    "30M": ("1d", "1m", ("tail", 30)),
+    "1H": ("1d", "1m", ("tail", 60)),
+    "5H": ("1d", "1m", ("tail", 300)),
+    "1D": ("5d", "1m", ("tail", 390)),
+    "1W": ("1mo", "15m", ("tail", 130)),
+    "1M": ("6mo", "1d", ("days", 31)),
+    "1Y": ("2y", "1d", ("days", 366)),
+    "5Y": ("10y", "1wk", ("days", 1830)),
+    "MAX": ("max", "1mo", ("all", 0)),
+}
 
 
-# ── indicator math ──────────────────────────────────────────────
-def _sma(s: pd.Series, n: int) -> pd.Series:
-    return s.rolling(n).mean()
+# ── indicator math (computed on the FULL warmup series) ─────────
+def _sma(s, n): return s.rolling(n).mean()
+def _ema(s, n): return s.ewm(span=n, adjust=False).mean()
 
 
-def _ema(s: pd.Series, n: int) -> pd.Series:
-    return s.ewm(span=n, adjust=False).mean()
-
-
-def _rsi(close: pd.Series, n: int = 14) -> pd.Series:
+def _rsi(close, n=14):
     delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.ewm(alpha=1 / n, adjust=False).mean()   # Wilder smoothing
-    avg_loss = loss.ewm(alpha=1 / n, adjust=False).mean()
-    rs = avg_gain / avg_loss.replace(0, np.nan)
+    gain = delta.clip(lower=0).ewm(alpha=1 / n, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1 / n, adjust=False).mean()
+    rs = gain / loss.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
 
 
-def _macd(close: pd.Series, fast=12, slow=26, signal=9):
+def _macd(close, fast=12, slow=26, signal=9):
     line = _ema(close, fast) - _ema(close, slow)
     sig = line.ewm(span=signal, adjust=False).mean()
     return line, sig, line - sig
 
 
-def _bbands(close: pd.Series, n=20, k=2.0):
+def _bbands(close, n=20, k=2.0):
     mid = close.rolling(n).mean()
     sd = close.rolling(n).std()
     return mid - k * sd, mid, mid + k * sd
 
 
-def _vwap(high, low, close, volume) -> pd.Series:
+def _vwap(high, low, close, volume):
     tp = (high + low + close) / 3
     return (tp * volume).cumsum() / volume.cumsum().replace(0, np.nan)
 
 
 def _stoch(high, low, close, k=14, d=3):
-    ll = low.rolling(k).min()
-    hh = high.rolling(k).max()
+    ll, hh = low.rolling(k).min(), high.rolling(k).max()
     fast_k = 100 * (close - ll) / (hh - ll).replace(0, np.nan)
     slow_k = fast_k.rolling(d).mean()
     return slow_k, slow_k.rolling(d).mean()
 
 
-def _linreg_endpoint(series: pd.Series, n: int) -> pd.Series:
+def _linreg_endpoint(series, n):
     x = np.arange(n)
     def fit(y):
         if np.isnan(y).any():
@@ -67,7 +75,6 @@ def _linreg_endpoint(series: pd.Series, n: int) -> pd.Series:
 
 
 def _squeeze(high, low, close, n=20):
-    # Bollinger Bands inside Keltner Channels => squeeze ON.
     basis = _sma(close, n)
     dev = 2.0 * close.rolling(n).std()
     ub, lb = basis + dev, basis - dev
@@ -76,31 +83,37 @@ def _squeeze(high, low, close, n=20):
     on = ((lb > lkc) & (ub < ukc)).astype(float)
     hh, ll = high.rolling(n).max(), low.rolling(n).min()
     mid = ((hh + ll) / 2 + _sma(close, n)) / 2
-    mom = _linreg_endpoint(close - mid, n)
-    return mom, on
+    return _linreg_endpoint(close - mid, n), on
 
 
-# ── dispatch ────────────────────────────────────────────────────
-def _series(timestamps: list[str], values) -> dict:
-    return {"time": timestamps, "values": [None if pd.isna(v) else round(float(v), 4) for v in values]}
+def _trim_start(index: pd.DatetimeIndex, keep: tuple[str, int]) -> int:
+    mode, amt = keep
+    if mode == "tail":
+        return max(0, len(index) - amt)
+    if mode == "days":
+        cutoff = index[-1] - pd.Timedelta(days=amt)
+        for i, t in enumerate(index):
+            if t >= cutoff:
+                return i
+    return 0
 
 
 def compute(ticker: str, range_: str, studies: list[str]) -> dict:
-    period, interval, tail = RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))
+    period, interval, keep = IND_CFG.get(range_.upper(), ("6mo", "1d", ("days", 31)))
     hist = yf.Ticker(ticker).history(period=period, interval=interval)
-    if tail is not None:
-        hist = hist.tail(tail)
 
     out: dict[str, dict] = {}
     if hist.empty:
         return {"ticker": ticker.upper(), "range": range_.upper(), "indicators": out}
 
     df = hist.rename(columns=str.lower)
-    ts = [t.isoformat() for t in hist.index]
-    o, h, l, c, v = df["open"], df["high"], df["low"], df["close"], df["volume"]
+    h, l, c, v = df["high"], df["low"], df["close"], df["volume"]
+    start = _trim_start(hist.index, keep)
+    ts = [t.isoformat() for t in hist.index[start:]]
 
-    def add(name, vals):
-        out[name] = _series(ts, vals)
+    def add(name, full_vals):
+        vals = [None if pd.isna(x) else round(float(x), 4) for x in full_vals[start:]]
+        out[name] = {"time": ts, "values": vals}
 
     for raw in studies:
         s = raw.strip().lower()
