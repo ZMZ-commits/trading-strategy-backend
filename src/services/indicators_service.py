@@ -125,7 +125,9 @@ def compute(ticker: str, range_: str, studies: list[str]) -> dict:
             elif s == "bbands":
                 lo, mid, up = _bbands(c); add("bb_lower", lo); add("bb_mid", mid); add("bb_upper", up)
             elif s == "vwap":
-                add("vwap", _vwap(h, l, c, v))
+                # VWAP is a session indicator — only meaningful on intraday ranges.
+                if range_.upper() in ("30M", "1H", "5H", "1D"):
+                    add("vwap", _vwap(h, l, c, v))
             elif s == "rsi":
                 add("rsi", _rsi(c))
             elif s == "macd":
