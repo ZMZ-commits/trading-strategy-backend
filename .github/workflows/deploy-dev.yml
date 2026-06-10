@@ -2,7 +2,7 @@ name: Deploy → Dev (Oracle Cloud)
 
 on:
   push:
-    branches: [deployment]
+    branches: [dev]
     paths:
       - 'src/**'
       - 'Dockerfile'
