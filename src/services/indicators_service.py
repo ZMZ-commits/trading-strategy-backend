@@ -98,8 +98,16 @@ def _trim_start(index: pd.DatetimeIndex, keep: tuple[str, int]) -> int:
     return 0
 
 
-def compute(ticker: str, range_: str, studies: list[str]) -> dict:
+INTERVAL_MAP: dict[str, str] = {
+    "1s": "1m", "1m": "1m", "1h": "1h", "1d": "1d", "1w": "1wk", "1mo": "1mo",
+}
+
+
+def compute(ticker: str, range_: str, studies: list[str], interval_override: str | None = None) -> dict:
     period, interval, keep = IND_CFG.get(range_.upper(), ("6mo", "1d", ("days", 31)))
+    if interval_override:
+        interval = INTERVAL_MAP.get(interval_override.lower(), interval)
+        keep = ("all", 0)  # return full window when custom interval
     hist = yf.Ticker(ticker).history(period=period, interval=interval)
 
     out: dict[str, dict] = {}
