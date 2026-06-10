@@ -20,7 +20,7 @@ IND_CFG: dict[str, tuple[str, str, tuple[str, int]]] = {
     "5H": ("1d", "1m", ("tail", 300)),
     "1D": ("5d", "1m", ("tail", 390)),
     "1W": ("1mo", "15m", ("tail", 130)),
-    "1M": ("6mo", "1d", ("days", 31)),
+    "1M": ("2y", "1d", ("days", 31)),
     "1Y": ("2y", "1d", ("days", 366)),
     "5Y": ("10y", "1wk", ("days", 1830)),
     "MAX": ("max", "1mo", ("all", 0)),

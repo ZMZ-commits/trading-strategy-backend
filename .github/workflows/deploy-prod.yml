@@ -1,4 +1,4 @@
-name: Deploy → Prod (Oracle Cloud)
+name: Deploy → Prod (Hetzner)
 
 on:
   push:
@@ -16,7 +16,7 @@ env:
 
 jobs:
   deploy:
-    name: Build, push to ghcr, deploy to Oracle VM
+    name: Build, push to ghcr, deploy to Hetzner VM
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -47,7 +47,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Deploy to Oracle VM
+      - name: Deploy to Hetzner VM
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SSH_HOST }}
