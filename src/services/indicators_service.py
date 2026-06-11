@@ -108,9 +108,23 @@ def compute(ticker: str, range_: str, studies: list[str], interval_override: str
     if interval_override:
         interval = INTERVAL_MAP.get(interval_override.lower(), interval)
         keep = ("all", 0)  # return full window when custom interval
-    hist = yf.Ticker(ticker).history(period=period, interval=interval)
+    ticker_obj = yf.Ticker(ticker)
+    hist = ticker_obj.history(period=period, interval=interval)
 
     out: dict[str, dict] = {}
+    if hist.empty:
+        return {"ticker": ticker.upper(), "range": range_.upper(), "indicators": out}
+
+    # Clamp to the last bar the price chart returns so indicator lines don't
+    # float past the rightmost candle into empty space.  The warmup fetch uses
+    # a longer period than the price fetch, so it can include extra bars
+    # (e.g. today's partial bar) that have no corresponding candle.
+    if not interval_override:
+        from . import yfinance_service
+        price_period, price_interval = yfinance_service.RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))[:2]
+        price_hist = ticker_obj.history(period=price_period, interval=price_interval)
+        if not price_hist.empty:
+            hist = hist[hist.index <= price_hist.index[-1]]
     if hist.empty:
         return {"ticker": ticker.upper(), "range": range_.upper(), "indicators": out}
 
