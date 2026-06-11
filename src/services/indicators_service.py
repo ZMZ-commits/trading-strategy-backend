@@ -124,6 +124,10 @@ def compute(ticker: str, range_: str, studies: list[str], interval_override: str
         price_period, price_interval = yfinance_service.RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))[:2]
         price_hist = ticker_obj.history(period=price_period, interval=price_interval)
         if not price_hist.empty:
+            # Drop NaN OHLC rows the same way yfinance_service.get_history does,
+            # so the clamp date matches the actual last candle visible on the chart.
+            price_hist = price_hist.dropna(subset=["Open", "High", "Low", "Close"])
+        if not price_hist.empty:
             hist = hist[hist.index <= price_hist.index[-1]]
     if hist.empty:
         return {"ticker": ticker.upper(), "range": range_.upper(), "indicators": out}
