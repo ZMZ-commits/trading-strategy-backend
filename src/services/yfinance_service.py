@@ -16,12 +16,25 @@ RANGE_MAP: dict[str, tuple[str, str, int | None]] = {
     "MAX": ("max", "1mo", None),
 }
 
+# Map UI interval labels → yfinance interval strings.
+INTERVAL_MAP: dict[str, str] = {
+    "1s": "1m",   # yfinance minimum is 1m; 1s falls back to 1m
+    "1m": "1m",
+    "1h": "1h",
+    "1d": "1d",
+    "1w": "1wk",
+    "1mo": "1mo",
+}
+
 INDEX_SYMBOLS = ["^GSPC", "^IXIC", "^DJI", "^VIX"]
 INDEX_NAMES = {"^GSPC": "S&P 500", "^IXIC": "NASDAQ", "^DJI": "DOW", "^VIX": "VIX"}
 
 
-def get_history(ticker: str, range_: str) -> dict:
+def get_history(ticker: str, range_: str, interval_override: str | None = None) -> dict:
     period, interval, tail = RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))
+    if interval_override:
+        interval = INTERVAL_MAP.get(interval_override.lower(), interval)
+        tail = None  # don't trim when a custom interval is requested
     hist = yf.Ticker(ticker).history(period=period, interval=interval)
     bars = []
     for ts, row in hist.iterrows():

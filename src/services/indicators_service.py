@@ -98,11 +98,34 @@ def _trim_start(index: pd.DatetimeIndex, keep: tuple[str, int]) -> int:
     return 0
 
 
-def compute(ticker: str, range_: str, studies: list[str]) -> dict:
+INTERVAL_MAP: dict[str, str] = {
+    "1s": "1m", "1m": "1m", "1h": "1h", "1d": "1d", "1w": "1wk", "1mo": "1mo",
+}
+
+
+def compute(ticker: str, range_: str, studies: list[str], interval_override: str | None = None) -> dict:
     period, interval, keep = IND_CFG.get(range_.upper(), ("6mo", "1d", ("days", 31)))
+    if interval_override:
+        interval = INTERVAL_MAP.get(interval_override.lower(), interval)
+        keep = ("all", 0)  # return full window when custom interval
     hist = yf.Ticker(ticker).history(period=period, interval=interval)
 
     out: dict[str, dict] = {}
+    if hist.empty:
+        return {"ticker": ticker.upper(), "range": range_.upper(), "indicators": out}
+
+    # Clamp to the same last bar the price chart would show.  The price chart
+    # fetches with a shorter period (e.g. "1mo") so its last timestamp may be
+    # earlier than the warmup fetch used here.  Any indicator points beyond that
+    # last price bar would float past the rightmost candle on the chart.
+    from . import yfinance_service  # local import to avoid circular
+    price_cfg = yfinance_service.RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))
+    price_period, price_interval = price_cfg[0], price_cfg[1]
+    if not interval_override:
+        price_hist = yf.Ticker(ticker).history(period=price_period, interval=price_interval)
+        if not price_hist.empty:
+            last_price_ts = price_hist.index[-1]
+            hist = hist[hist.index <= last_price_ts]
     if hist.empty:
         return {"ticker": ticker.upper(), "range": range_.upper(), "indicators": out}
 
