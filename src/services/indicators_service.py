@@ -102,12 +102,21 @@ INTERVAL_MAP: dict[str, str] = {
     "1s": "1m", "1m": "1m", "1h": "1h", "1d": "1d", "1w": "1wk", "1mo": "1mo",
 }
 
+# When the user overrides the interval we ignore IND_CFG's (range-keyed) period and
+# fetch the largest warmup yfinance allows for that interval, so long-lookback
+# indicators (SMA200…) can still resolve. yfinance caps: 1m ≤ 7d, 1h ≤ 730d.
+OVERRIDE_WARMUP: dict[str, str] = {
+    "1m": "7d", "1h": "2y", "1d": "10y", "1wk": "max", "1mo": "max",
+}
+
 
 def compute(ticker: str, range_: str, studies: list[str], interval_override: str | None = None) -> dict:
     period, interval, keep = IND_CFG.get(range_.upper(), ("6mo", "1d", ("days", 31)))
     if interval_override:
         interval = INTERVAL_MAP.get(interval_override.lower(), interval)
-        keep = ("all", 0)  # return full window when custom interval
+        # Custom interval: fetch the largest valid warmup for that interval so the
+        # indicator math stays warm; the OUTPUT is trimmed to the price window below.
+        period = OVERRIDE_WARMUP.get(interval, period)
     ticker_obj = yf.Ticker(ticker)
     hist = ticker_obj.history(period=period, interval=interval)
 
@@ -115,26 +124,33 @@ def compute(ticker: str, range_: str, studies: list[str], interval_override: str
     if hist.empty:
         return {"ticker": ticker.upper(), "range": range_.upper(), "indicators": out}
 
-    # Clamp to the last bar the price chart returns so indicator lines don't
-    # float past the rightmost candle into empty space.  The warmup fetch uses
-    # a longer period than the price fetch, so it can include extra bars
-    # (e.g. today's partial bar) that have no corresponding candle.
-    if not interval_override:
-        from . import yfinance_service
-        price_period, price_interval = yfinance_service.RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))[:2]
-        price_hist = ticker_obj.history(period=price_period, interval=price_interval)
-        if not price_hist.empty:
-            # Drop NaN OHLC rows the same way yfinance_service.get_history does,
-            # so the clamp date matches the actual last candle visible on the chart.
-            price_hist = price_hist.dropna(subset=["Open", "High", "Low", "Close"])
-        if not price_hist.empty:
-            hist = hist[hist.index <= price_hist.index[-1]]
+    # Pull the exact window the price chart shows (same ticker + interval) so the
+    # indicator lines align 1:1 with the candles instead of floating past them or
+    # spanning a far wider range. The warmup fetch above is longer and feeds the
+    # indicator math; we then trim the emitted series to this window.
+    from . import yfinance_service
+    price_period, price_interval = yfinance_service.RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))[:2]
+    if interval_override:
+        price_interval = INTERVAL_MAP.get(interval_override.lower(), price_interval)
+    price_hist = ticker_obj.history(period=price_period, interval=price_interval)
+    if not price_hist.empty:
+        # Drop NaN OHLC rows the same way yfinance_service.get_history does, so the
+        # window matches the actual candles the chart renders.
+        price_hist = price_hist.dropna(subset=["Open", "High", "Low", "Close"])
+    if not price_hist.empty:
+        # Right edge: never emit indicator points past the last candle.
+        hist = hist[hist.index <= price_hist.index[-1]]
     if hist.empty:
         return {"ticker": ticker.upper(), "range": range_.upper(), "indicators": out}
 
     df = hist.rename(columns=str.lower)
     h, l, c, v = df["high"], df["low"], df["close"], df["volume"]
-    start = _trim_start(hist.index, keep)
+    if interval_override and not price_hist.empty:
+        # Left edge: start at the first candle of the price window. Warmup bars
+        # before it fed the math above but are not emitted.
+        start = int((hist.index < price_hist.index[0]).sum())
+    else:
+        start = _trim_start(hist.index, keep)
     ts = [t.isoformat() for t in hist.index[start:]]
 
     def add(name, full_vals):
