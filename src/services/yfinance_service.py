@@ -9,8 +9,11 @@ RANGE_MAP: dict[str, tuple[str, str, int | None]] = {
     "1H": ("1d", "1m", 60),      # last hour
     "5H": ("1d", "1m", 300),     # last 5 hours
     "1D": ("1d", "1m", None),
-    "1W": ("5d", "15m", None),
+    "5D": ("5d", "15m", None),
     "1M": ("1mo", "1d", None),
+    "3M": ("3mo", "1d", None),
+    "6M": ("6mo", "1d", None),
+    "YTD": ("ytd", "1d", None),    # yfinance supports period="ytd" (since Jan 1)
     "1Y": ("1y", "1d", None),
     "5Y": ("5y", "1wk", None),
     "MAX": ("max", "1mo", None),
