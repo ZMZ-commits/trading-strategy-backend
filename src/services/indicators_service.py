@@ -19,8 +19,11 @@ IND_CFG: dict[str, tuple[str, str, tuple[str, int]]] = {
     "1H": ("1d", "1m", ("tail", 60)),
     "5H": ("1d", "1m", ("tail", 300)),
     "1D": ("5d", "1m", ("tail", 390)),
-    "1W": ("1mo", "15m", ("tail", 130)),
+    "5D": ("1mo", "15m", ("tail", 130)),
     "1M": ("2y", "1d", ("days", 31)),
+    "3M": ("2y", "1d", ("days", 92)),
+    "6M": ("2y", "1d", ("days", 183)),
+    "YTD": ("2y", "1d", ("ytd", 0)),    # warmup 2y, trim to Jan 1 (dynamic)
     "1Y": ("2y", "1d", ("days", 366)),
     "5Y": ("10y", "1wk", ("days", 1830)),
     "MAX": ("max", "1mo", ("all", 0)),
@@ -90,6 +93,12 @@ def _trim_start(index: pd.DatetimeIndex, keep: tuple[str, int]) -> int:
     mode, amt = keep
     if mode == "tail":
         return max(0, len(index) - amt)
+    if mode == "ytd":
+        # Trim to Jan 1 of the most recent bar's year (year-to-date is dynamic).
+        cutoff = pd.Timestamp(year=index[-1].year, month=1, day=1, tz=index[-1].tz)
+        for i, t in enumerate(index):
+            if t >= cutoff:
+                return i
     if mode == "days":
         cutoff = index[-1] - pd.Timedelta(days=amt)
         for i, t in enumerate(index):
