@@ -24,3 +24,9 @@ def run_custom(slug: str, bars: list[dict], params: dict | None = None, timeout:
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode())
+
+
+def list_custom(timeout: float = 10.0) -> dict:
+    """GET the list of published indicators from the sandbox worker."""
+    with urllib.request.urlopen(f"{SANDBOX_URL}/indicators", timeout=timeout) as resp:
+        return json.loads(resp.read().decode())

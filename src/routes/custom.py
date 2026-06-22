@@ -13,6 +13,15 @@ from ..services import yfinance_service, sandbox_client
 router = APIRouter()
 
 
+@router.get("/custom")
+def list_custom_indicators():
+    """List published custom indicators available to render."""
+    try:
+        return sandbox_client.list_custom()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"sandbox unavailable: {e}")
+
+
 @router.get("/stocks/{ticker}/custom/{slug}")
 def custom_indicator(ticker: str, slug: str, range: str = "1M", interval: str | None = None):
     try:
