@@ -98,6 +98,7 @@ package, and fans out live ticks from Redis over WebSocket.
   with warmup + window alignment.
 - File-based strategy store (no DB); in-process engine execution; run history.
 - Live tick fan-out from Redis over WebSocket.
+- Custom (user-published) indicators via the sandbox worker (`/stocks/{ticker}/custom/{slug}`).
 - 3-env Dockerized deploy; env-driven CORS/store/Redis. Test suite under `tests/`.
 
 ---
@@ -106,6 +107,8 @@ package, and fans out live ticks from Redis over WebSocket.
 > Prepend newest first. Note the branch. Recompute with
 > `git log origin/main --no-merges --oneline`.
 
+- **2026-06-22** (`dev`→prod) — `GET /stocks/{ticker}/custom/{slug}`: fetch bars then delegate to the sandbox worker to run published indicators (`routes/custom.py` + `services/sandbox_client.py`, `SANDBOX_URL`). Phase 1b loop, verified end-to-end.
+- **2026-06-21** (`main`) — added 3M/6M/YTD range presets; renamed 1W→5D.
 - **2026-06-13** (`main`) — align indicator series to the price window for custom intervals.
 - **2026-06-11** (`main`) — clamp indicator data to last non-NaN price bar (no line overhang).
 - **2026-06-10** (`main`) — optional `interval` override on history + indicators; CI renamed to Hetzner; lowercase GHCR owner fix; skip NaN OHLC rows (no 500 on 1M/1Y/5Y/MAX).
