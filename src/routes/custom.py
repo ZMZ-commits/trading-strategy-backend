@@ -4,6 +4,8 @@ GET /stocks/{ticker}/custom/{slug}: fetch the ticker's bars, then delegate to th
 sandbox worker which runs the published compute(ctx) and returns the series in the
 same shape as the built-in /indicators endpoint.
 """
+import urllib.error
+
 from fastapi import APIRouter, HTTPException
 
 from ..services import yfinance_service, sandbox_client
@@ -19,5 +21,9 @@ def custom_indicator(ticker: str, slug: str, range: str = "1M", interval: str | 
         raise HTTPException(status_code=400, detail=str(e))
     try:
         return sandbox_client.run_custom(slug, hist["bars"])
-    except Exception as e:  # sandbox not deployed / unreachable / author error
-        raise HTTPException(status_code=502, detail=f"sandbox unavailable or failed: {e}")
+    except urllib.error.HTTPError as e:
+        # Sandbox was reached but returned an error (404 unknown indicator, 400 author error).
+        raise HTTPException(status_code=e.code, detail=f"sandbox: {e.reason}")
+    except Exception as e:
+        # Sandbox unreachable / not deployed / timeout.
+        raise HTTPException(status_code=502, detail=f"sandbox unavailable: {e}")
