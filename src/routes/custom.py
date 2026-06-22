@@ -22,8 +22,12 @@ def custom_indicator(ticker: str, slug: str, range: str = "1M", interval: str | 
     try:
         return sandbox_client.run_custom(slug, hist["bars"])
     except urllib.error.HTTPError as e:
-        # Sandbox was reached but returned an error (404 unknown indicator, 400 author error).
-        raise HTTPException(status_code=e.code, detail=f"sandbox: {e.reason}")
+        # Sandbox was reached but returned an error (404 unknown indicator, 400/422 author error).
+        try:
+            body = e.read().decode(errors="replace")[:600]
+        except Exception:
+            body = ""
+        raise HTTPException(status_code=e.code, detail=f"sandbox {e.code}: {body or e.reason}")
     except Exception as e:
         # Sandbox unreachable / not deployed / timeout.
         raise HTTPException(status_code=502, detail=f"sandbox unavailable: {e}")
