@@ -30,3 +30,16 @@ def list_custom(timeout: float = 10.0) -> dict:
     """GET the list of published indicators from the sandbox worker."""
     with urllib.request.urlopen(f"{SANDBOX_URL}/indicators", timeout=timeout) as resp:
         return json.loads(resp.read().decode())
+
+
+def run_strategy(slug: str, bars: list[dict], timeout: float = 15.0) -> dict:
+    """POST {slug, bars} to the sandbox; returns the strategy's line + signals."""
+    payload = json.dumps({"slug": slug, "bars": bars}).encode()
+    req = urllib.request.Request(
+        f"{SANDBOX_URL}/strategy",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode())
