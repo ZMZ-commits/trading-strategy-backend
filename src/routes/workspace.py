@@ -8,6 +8,7 @@ them (the backend runs as root).
 """
 import os
 import re
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -116,3 +117,25 @@ def scaffold(req: ScaffoldRequest):
     _chown_coder(file_path)
 
     return {"kind": req.kind, "name": req.name, "slug": slug, "path": f"{folder_name}/{slug}"}
+
+
+@router.delete("/workspace/{kind}/{slug}")
+def delete_item(kind: str, slug: str):
+    """Delete a strategy/indicator folder from the workspace (mirrors the IDE)."""
+    if kind not in ("strategy", "indicator"):
+        raise HTTPException(status_code=400, detail="kind must be 'strategy' or 'indicator'")
+    # Guard against path traversal (folder names may be arbitrary, e.g. created in
+    # the IDE, but must be a single path segment that resolves directly under base).
+    if not slug or slug in (".", "..") or "/" in slug or "\\" in slug:
+        raise HTTPException(status_code=400, detail="invalid slug")
+
+    folder_name = "strategies" if kind == "strategy" else "indicators"
+    base = (WORKSPACE / folder_name).resolve()
+    dest = (base / slug).resolve()
+    if dest.parent != base:
+        raise HTTPException(status_code=400, detail="invalid path")
+    if not dest.is_dir():
+        raise HTTPException(status_code=404, detail=f"{kind} '{slug}' not found")
+
+    shutil.rmtree(dest)
+    return {"deleted": slug, "kind": kind}
