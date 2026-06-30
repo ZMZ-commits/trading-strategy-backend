@@ -37,6 +37,8 @@ def _chown_coder(path: Path) -> None:
 class ScaffoldRequest(BaseModel):
     kind: str  # "strategy" | "indicator"
     name: str
+    content: str | None = None    # optional: full file body (else a starter template)
+    filename: str | None = None   # optional: file name (else compute.py / strategy.py)
 
 
 INDICATOR_TEMPLATE = '''\
@@ -104,14 +106,22 @@ def scaffold(req: ScaffoldRequest):
     dest = base / slug
     if dest.exists():
         raise HTTPException(status_code=409, detail=f"{req.kind} '{slug}' already exists")
-    dest.mkdir(parents=True)
 
-    if req.kind == "indicator":
-        file_path = dest / "compute.py"
-        file_path.write_text(INDICATOR_TEMPLATE.format(name=req.name))
+    default_name = "compute.py" if req.kind == "indicator" else "strategy.py"
+    fname = req.filename or default_name
+    if "/" in fname or "\\" in fname or fname in (".", ".."):
+        raise HTTPException(status_code=400, detail="invalid filename")
+
+    if req.content is not None:
+        body = req.content
+    elif req.kind == "indicator":
+        body = INDICATOR_TEMPLATE.format(name=req.name)
     else:
-        file_path = dest / "strategy.py"
-        file_path.write_text(STRATEGY_TEMPLATE.format(name=req.name))
+        body = STRATEGY_TEMPLATE.format(name=req.name)
+
+    dest.mkdir(parents=True)
+    file_path = dest / fname
+    file_path.write_text(body)
 
     _chown_coder(dest)
     _chown_coder(file_path)
