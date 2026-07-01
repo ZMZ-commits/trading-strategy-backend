@@ -119,51 +119,68 @@ OVERRIDE_WARMUP: dict[str, str] = {
 }
 
 
-def compute(ticker: str, range_: str, studies: list[str], interval_override: str | None = None) -> dict:
-    period, interval, keep = IND_CFG.get(range_.upper(), ("6mo", "1d", ("days", 31)))
-    if interval_override:
-        interval = INTERVAL_MAP.get(interval_override.lower(), interval)
-        # Custom interval: fetch the largest valid warmup for that interval so the
-        # indicator math stays warm; the OUTPUT is trimmed to the price window below.
-        period = OVERRIDE_WARMUP.get(interval, period)
+def compute(ticker: str, range_: str, studies: list[str], interval_override: str | None = None,
+            start: str | None = None, end: str | None = None) -> dict:
     ticker_obj = yf.Ticker(ticker)
-    hist = ticker_obj.history(period=period, interval=interval)
-
     out: dict[str, dict] = {}
-    if hist.empty:
-        return {"ticker": ticker.upper(), "range": range_.upper(), "indicators": out}
 
-    # Pull the exact window the price chart shows (same ticker + interval) so the
-    # indicator lines align 1:1 with the candles instead of floating past them or
-    # spanning a far wider range. The warmup fetch above is longer and feeds the
-    # indicator math; we then trim the emitted series to this window.
-    from . import yfinance_service
-    price_period, price_interval = yfinance_service.RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))[:2]
-    if interval_override:
-        price_interval = INTERVAL_MAP.get(interval_override.lower(), price_interval)
-    price_hist = ticker_obj.history(period=price_period, interval=price_interval)
-    if not price_hist.empty:
-        # Drop NaN OHLC rows the same way yfinance_service.get_history does, so the
-        # window matches the actual candles the chart renders.
-        price_hist = price_hist.dropna(subset=["Open", "High", "Low", "Close"])
-    if not price_hist.empty:
-        # Right edge: never emit indicator points past the last candle.
-        hist = hist[hist.index <= price_hist.index[-1]]
-    if hist.empty:
-        return {"ticker": ticker.upper(), "range": range_.upper(), "indicators": out}
-
-    df = hist.rename(columns=str.lower)
-    h, l, c, v = df["high"], df["low"], df["close"], df["volume"]
-    if interval_override and not price_hist.empty:
-        # Left edge: start at the first candle of the price window. Warmup bars
-        # before it fed the math above but are not emitted.
-        start = int((hist.index < price_hist.index[0]).sum())
+    if start and end:
+        # Custom window: fetch exactly [start, end] at the interval and emit every
+        # bar (no extra warmup, so left-edge lookback indicators begin NaN).
+        interval = INTERVAL_MAP.get((interval_override or "1d").lower(), "1d")
+        hist = ticker_obj.history(start=start, end=end, interval=interval)
+        if hist.empty:
+            return {"ticker": ticker.upper(), "range": "CUSTOM", "indicators": out}
+        hist = hist.dropna(subset=["Open", "High", "Low", "Close"])
+        df = hist.rename(columns=str.lower)
+        h, l, c, v = df["high"], df["low"], df["close"], df["volume"]
+        start_i = 0
+        ts = [t.isoformat() for t in hist.index]
+        result_range = "CUSTOM"
     else:
-        start = _trim_start(hist.index, keep)
-    ts = [t.isoformat() for t in hist.index[start:]]
+        period, interval, keep = IND_CFG.get(range_.upper(), ("6mo", "1d", ("days", 31)))
+        if interval_override:
+            interval = INTERVAL_MAP.get(interval_override.lower(), interval)
+            # Custom interval: fetch the largest valid warmup for that interval so the
+            # indicator math stays warm; the OUTPUT is trimmed to the price window below.
+            period = OVERRIDE_WARMUP.get(interval, period)
+        hist = ticker_obj.history(period=period, interval=interval)
+
+        if hist.empty:
+            return {"ticker": ticker.upper(), "range": range_.upper(), "indicators": out}
+
+        # Pull the exact window the price chart shows (same ticker + interval) so the
+        # indicator lines align 1:1 with the candles instead of floating past them or
+        # spanning a far wider range. The warmup fetch above is longer and feeds the
+        # indicator math; we then trim the emitted series to this window.
+        from . import yfinance_service
+        price_period, price_interval = yfinance_service.RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))[:2]
+        if interval_override:
+            price_interval = INTERVAL_MAP.get(interval_override.lower(), price_interval)
+        price_hist = ticker_obj.history(period=price_period, interval=price_interval)
+        if not price_hist.empty:
+            # Drop NaN OHLC rows the same way yfinance_service.get_history does, so the
+            # window matches the actual candles the chart renders.
+            price_hist = price_hist.dropna(subset=["Open", "High", "Low", "Close"])
+        if not price_hist.empty:
+            # Right edge: never emit indicator points past the last candle.
+            hist = hist[hist.index <= price_hist.index[-1]]
+        if hist.empty:
+            return {"ticker": ticker.upper(), "range": range_.upper(), "indicators": out}
+
+        df = hist.rename(columns=str.lower)
+        h, l, c, v = df["high"], df["low"], df["close"], df["volume"]
+        if interval_override and not price_hist.empty:
+            # Left edge: start at the first candle of the price window. Warmup bars
+            # before it fed the math above but are not emitted.
+            start_i = int((hist.index < price_hist.index[0]).sum())
+        else:
+            start_i = _trim_start(hist.index, keep)
+        ts = [t.isoformat() for t in hist.index[start_i:]]
+        result_range = range_.upper()
 
     def add(name, full_vals):
-        vals = [None if pd.isna(x) else round(float(x), 4) for x in full_vals[start:]]
+        vals = [None if pd.isna(x) else round(float(x), 4) for x in full_vals[start_i:]]
         out[name] = {"time": ts, "values": vals}
 
     for raw in studies:
@@ -190,4 +207,4 @@ def compute(ticker: str, range_: str, studies: list[str], interval_override: str
         except Exception:
             continue
 
-    return {"ticker": ticker.upper(), "range": range_.upper(), "indicators": out}
+    return {"ticker": ticker.upper(), "range": result_range, "indicators": out}

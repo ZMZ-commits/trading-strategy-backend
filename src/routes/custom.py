@@ -23,9 +23,10 @@ def list_custom_indicators():
 
 
 @router.get("/stocks/{ticker}/custom/{slug}")
-def custom_indicator(ticker: str, slug: str, range: str = "1M", interval: str | None = None):
+def custom_indicator(ticker: str, slug: str, range: str = "1M", interval: str | None = None,
+                     start: str | None = None, end: str | None = None):
     try:
-        hist = yfinance_service.get_history(ticker, range, interval)
+        hist = yfinance_service.get_history(ticker, range, interval, start, end)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     try:
@@ -43,11 +44,12 @@ def custom_indicator(ticker: str, slug: str, range: str = "1M", interval: str | 
 
 
 @router.get("/stocks/{ticker}/strategy/{slug}")
-def strategy_chart(ticker: str, slug: str, range: str = "1M", interval: str | None = None):
+def strategy_chart(ticker: str, slug: str, range: str = "1M", interval: str | None = None,
+                   start: str | None = None, end: str | None = None):
     """Run an IDE strategy over the ticker's bars; returns its plotted line(s) and
     buy/sell signals for the chart (same series shape as /custom, plus signals)."""
     try:
-        hist = yfinance_service.get_history(ticker, range, interval)
+        hist = yfinance_service.get_history(ticker, range, interval, start, end)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     try:
