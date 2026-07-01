@@ -33,12 +33,24 @@ INDEX_SYMBOLS = ["^GSPC", "^IXIC", "^DJI", "^VIX"]
 INDEX_NAMES = {"^GSPC": "S&P 500", "^IXIC": "NASDAQ", "^DJI": "DOW", "^VIX": "VIX"}
 
 
-def get_history(ticker: str, range_: str, interval_override: str | None = None) -> dict:
-    period, interval, tail = RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))
-    if interval_override:
-        interval = INTERVAL_MAP.get(interval_override.lower(), interval)
-        tail = None  # don't trim when a custom interval is requested
-    hist = yf.Ticker(ticker).history(period=period, interval=interval)
+def get_history(
+    ticker: str,
+    range_: str,
+    interval_override: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+) -> dict:
+    if start and end:
+        # Custom window: explicit from/to dates at the requested interval.
+        interval = INTERVAL_MAP.get((interval_override or "1d").lower(), "1d")
+        tail = None
+        hist = yf.Ticker(ticker).history(start=start, end=end, interval=interval)
+    else:
+        period, interval, tail = RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))
+        if interval_override:
+            interval = INTERVAL_MAP.get(interval_override.lower(), interval)
+            tail = None  # don't trim when a custom interval is requested
+        hist = yf.Ticker(ticker).history(period=period, interval=interval)
     bars = []
     for ts, row in hist.iterrows():
         o, h, l, c = float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"])
