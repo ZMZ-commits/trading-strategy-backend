@@ -208,3 +208,70 @@ def compute(ticker: str, range_: str, studies: list[str], interval_override: str
             continue
 
     return {"ticker": ticker.upper(), "range": result_range, "indicators": out}
+
+
+# Extra calendar days of warmup to fetch before a custom [start,end] window, by
+# interval, so a strategy's rolling indicators/trade-tracker state are already
+# primed by the time the display window begins (same reasoning as IND_CFG).
+CUSTOM_WARMUP_DAYS: dict[str, int] = {"1m": 3, "1h": 40, "1d": 200, "1wk": 700, "1mo": 3650}
+
+
+def fetch_strategy_bars(ticker: str, range_: str, interval_override: str | None = None,
+                         start: str | None = None, end: str | None = None) -> tuple[list[dict], str | None]:
+    """Fetch bars for a strategy run WITH a warmup buffer before the display
+    window (reusing IND_CFG, the same warmup config built-in indicators use),
+    so rolling indicators and a strategy's trade-tracker state (in_position,
+    running highs/lows) are already primed by the time the display window
+    starts -- instead of resetting to flat on every re-fetch/range switch.
+
+    Returns (bars, display_start_iso): bars includes the warmup portion;
+    display_start_iso marks where the display window begins (the sandbox trims
+    everything it returns to this boundary). display_start_iso is None when
+    there isn't enough data to establish one (caller should skip trimming).
+    """
+    from . import yfinance_service
+    ticker_obj = yf.Ticker(ticker)
+
+    if start and end:
+        interval = INTERVAL_MAP.get((interval_override or "1d").lower(), "1d")
+        pad_days = CUSTOM_WARMUP_DAYS.get(interval, 200)
+        warm_start = (pd.Timestamp(start) - pd.Timedelta(days=pad_days)).strftime("%Y-%m-%d")
+        hist = ticker_obj.history(start=warm_start, end=end, interval=interval)
+        if hist.empty:
+            return [], None
+        hist = hist.dropna(subset=["Open", "High", "Low", "Close"])
+        if hist.empty:
+            return [], None
+        display_start = pd.Timestamp(start, tz=hist.index.tz)
+        return yfinance_service.bars_from_hist(hist), display_start.isoformat()
+
+    period, interval, keep = IND_CFG.get(range_.upper(), ("6mo", "1d", ("days", 31)))
+    if interval_override:
+        interval = INTERVAL_MAP.get(interval_override.lower(), interval)
+        period = OVERRIDE_WARMUP.get(interval, period)
+    hist = ticker_obj.history(period=period, interval=interval)
+    if hist.empty:
+        return [], None
+    hist = hist.dropna(subset=["Open", "High", "Low", "Close"])
+    if hist.empty:
+        return [], None
+
+    # Match the exact display window the price chart shows (same alignment
+    # compute() uses), so display_start lines up with what's actually rendered.
+    price_period, price_interval = yfinance_service.RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))[:2]
+    if interval_override:
+        price_interval = INTERVAL_MAP.get(interval_override.lower(), price_interval)
+    price_hist = ticker_obj.history(period=price_period, interval=price_interval)
+    if not price_hist.empty:
+        price_hist = price_hist.dropna(subset=["Open", "High", "Low", "Close"])
+        hist = hist[hist.index <= price_hist.index[-1]]
+    if hist.empty:
+        return [], None
+
+    if interval_override and not price_hist.empty:
+        start_i = int((hist.index < price_hist.index[0]).sum())
+    else:
+        start_i = _trim_start(hist.index, keep)
+
+    display_start = hist.index[start_i].isoformat() if start_i < len(hist.index) else None
+    return yfinance_service.bars_from_hist(hist), display_start
