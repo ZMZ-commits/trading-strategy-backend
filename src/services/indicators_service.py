@@ -15,9 +15,14 @@ import yfinance as yf
 # range -> (fetch_period, interval, (trim_mode, amount))
 # trim_mode: "tail" keep last N bars, "days" keep last D calendar days, "all".
 IND_CFG: dict[str, tuple[str, str, tuple[str, int]]] = {
-    "30M": ("1d", "1m", ("tail", 30)),
-    "1H": ("1d", "1m", ("tail", 60)),
-    "5H": ("1d", "1m", ("tail", 300)),
+    # 30M/1H/5H previously fetched only "1d" of 1-minute bars (~390 total), so a
+    # long-lookback average (SMA 200 needs 200 prior bars) ran out of warmup and
+    # started partway through the chart instead of from the left edge. "1D"
+    # already fetched "5d" for the same reason; match it here too (yfinance's 1m
+    # cap is 7 days, so 5d is safely within range).
+    "30M": ("5d", "1m", ("tail", 30)),
+    "1H": ("5d", "1m", ("tail", 60)),
+    "5H": ("5d", "1m", ("tail", 300)),
     "1D": ("5d", "1m", ("tail", 390)),
     "5D": ("1mo", "15m", ("tail", 130)),
     "1M": ("2y", "1d", ("days", 31)),
