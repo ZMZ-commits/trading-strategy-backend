@@ -19,11 +19,12 @@ class CreateDatasetRequest(BaseModel):
     start: str
     end: str
     interval: str
+    name: str | None = None
 
 
 @router.post("/datasets")
 async def create_dataset(req: CreateDatasetRequest):
-    return dataset_service.create_dataset(req.ticker, req.start, req.end, req.interval)
+    return dataset_service.create_dataset(req.ticker, req.start, req.end, req.interval, req.name)
 
 
 @router.get("/datasets")
