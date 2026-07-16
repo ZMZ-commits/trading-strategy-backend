@@ -160,13 +160,14 @@ async def _run_pull(dataset_id: str, ticker: str, start: str, end: str, interval
 _TASKS: set[asyncio.Task] = set()
 
 
-def create_dataset(ticker: str, start: str, end: str, interval: str) -> dict:
+def create_dataset(ticker: str, start: str, end: str, interval: str, name: str | None = None) -> dict:
     if interval not in INTERVAL_MAP:
         raise HTTPException(status_code=400, detail=f"interval must be one of {list(INTERVAL_MAP)}")
     dataset_id = uuid.uuid4().hex[:12]
     (DATASET_ROOT / dataset_id).mkdir(parents=True)
     meta = {
-        "id": dataset_id, "ticker": ticker.upper(), "start": start, "end": end, "interval": interval,
+        "id": dataset_id, "name": (name or "").strip() or f"{ticker.upper()} {start}→{end}",
+        "ticker": ticker.upper(), "start": start, "end": end, "interval": interval,
         "status": "pending", "created_at": _now(), "row_count": 0,
         "progress": {"done": 0, "total": 1}, "error": None, "cancel_requested": False,
     }
