@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from ..services import yfinance_service, indicators_service
 
 router = APIRouter()
@@ -13,18 +14,20 @@ def get_snapshot(ticker: str):
 
 
 @router.get("/stocks/{ticker}/history")
-def get_history(ticker: str, range: str = "1M", interval: str | None = None):
+def get_history(ticker: str, range: str = "1M", interval: str | None = None,
+                start: str | None = None, end: str | None = None):
     try:
-        return yfinance_service.get_history(ticker, range, interval)
+        return yfinance_service.get_history(ticker, range, interval, start, end)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/stocks/{ticker}/indicators")
-def get_indicators(ticker: str, range: str = "1M", studies: str = "", interval: str | None = None):
+def get_indicators(ticker: str, range: str = "1M", studies: str = "", interval: str | None = None,
+                   start: str | None = None, end: str | None = None):
     study_list = [s for s in (studies or "").split(",") if s.strip()]
     try:
-        return indicators_service.compute(ticker, range, study_list, interval)
+        return indicators_service.compute(ticker, range, study_list, interval, start, end)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -32,3 +35,19 @@ def get_indicators(ticker: str, range: str = "1M", studies: str = "", interval: 
 @router.get("/market/indices")
 def get_indices():
     return yfinance_service.get_indices()
+
+
+class ComputeIndicatorsRequest(BaseModel):
+    bars: list[dict]
+    studies: list[str]
+
+
+@router.post("/indicators/compute")
+def compute_indicators(req: ComputeIndicatorsRequest):
+    """Compute indicators over CALLER-SUPPLIED bars (Lab Platform datasets,
+    possibly resampled) instead of a live yfinance fetch -- same math as the
+    live /stocks/{ticker}/indicators endpoint, so the two can never disagree."""
+    try:
+        return indicators_service.compute_from_bars(req.bars, req.studies)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

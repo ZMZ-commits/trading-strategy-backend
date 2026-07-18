@@ -33,18 +33,12 @@ INDEX_SYMBOLS = ["^GSPC", "^IXIC", "^DJI", "^VIX"]
 INDEX_NAMES = {"^GSPC": "S&P 500", "^IXIC": "NASDAQ", "^DJI": "DOW", "^VIX": "VIX"}
 
 
-def get_history(ticker: str, range_: str, interval_override: str | None = None) -> dict:
-    period, interval, tail = RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))
-    if interval_override:
-        interval = INTERVAL_MAP.get(interval_override.lower(), interval)
-        tail = None  # don't trim when a custom interval is requested
-    hist = yf.Ticker(ticker).history(period=period, interval=interval)
+def bars_from_hist(hist) -> list[dict]:
+    """Convert a yfinance history DataFrame into our bar-dict shape, dropping
+    rows with NaN OHLC (adjustment/dividend rows with no price data)."""
     bars = []
     for ts, row in hist.iterrows():
         o, h, l, c = float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"])
-        # Skip rows with NaN OHLC — yfinance includes adjustment/dividend rows
-        # for daily intervals that have no price data; float(nan) passes fine but
-        # breaks JSON serialization outside our try/except, causing a raw 500.
         if any(math.isnan(v) for v in (o, h, l, c)):
             continue
         vol = row["Volume"]
@@ -56,6 +50,28 @@ def get_history(ticker: str, range_: str, interval_override: str | None = None) 
             "close": round(c, 4),
             "volume": int(vol) if not math.isnan(float(vol)) else 0,
         })
+    return bars
+
+
+def get_history(
+    ticker: str,
+    range_: str,
+    interval_override: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+) -> dict:
+    if start and end:
+        # Custom window: explicit from/to dates at the requested interval.
+        interval = INTERVAL_MAP.get((interval_override or "1d").lower(), "1d")
+        tail = None
+        hist = yf.Ticker(ticker).history(start=start, end=end, interval=interval)
+    else:
+        period, interval, tail = RANGE_MAP.get(range_.upper(), ("1mo", "1d", None))
+        if interval_override:
+            interval = INTERVAL_MAP.get(interval_override.lower(), interval)
+            tail = None  # don't trim when a custom interval is requested
+        hist = yf.Ticker(ticker).history(period=period, interval=interval)
+    bars = bars_from_hist(hist)
     if tail is not None:
         bars = bars[-tail:]
     return {"ticker": ticker.upper(), "range": range_.upper(), "bars": bars}
