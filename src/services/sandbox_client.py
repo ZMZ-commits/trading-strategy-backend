@@ -30,3 +30,19 @@ def list_custom(timeout: float = 10.0) -> dict:
     """GET the list of published indicators from the sandbox worker."""
     with urllib.request.urlopen(f"{SANDBOX_URL}/indicators", timeout=timeout) as resp:
         return json.loads(resp.read().decode())
+
+
+def run_strategy(slug: str, bars: list[dict], display_start: str | None = None, timeout: float = 15.0) -> dict:
+    """POST {slug, bars, display_start} to the sandbox; returns the strategy's
+    line + signals. bars may include warmup history before display_start; the
+    sandbox primes the strategy's state over all of it but trims what it
+    returns to display_start (see engine tsp/worker.py execute_strategy)."""
+    payload = json.dumps({"slug": slug, "bars": bars, "display_start": display_start}).encode()
+    req = urllib.request.Request(
+        f"{SANDBOX_URL}/strategy",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode())

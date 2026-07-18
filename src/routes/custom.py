@@ -8,7 +8,7 @@ import urllib.error
 
 from fastapi import APIRouter, HTTPException
 
-from ..services import yfinance_service, sandbox_client
+from ..services import yfinance_service, indicators_service, sandbox_client
 
 router = APIRouter()
 
@@ -23,9 +23,10 @@ def list_custom_indicators():
 
 
 @router.get("/stocks/{ticker}/custom/{slug}")
-def custom_indicator(ticker: str, slug: str, range: str = "1M", interval: str | None = None):
+def custom_indicator(ticker: str, slug: str, range: str = "1M", interval: str | None = None,
+                     start: str | None = None, end: str | None = None):
     try:
-        hist = yfinance_service.get_history(ticker, range, interval)
+        hist = yfinance_service.get_history(ticker, range, interval, start, end)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     try:
@@ -39,4 +40,31 @@ def custom_indicator(ticker: str, slug: str, range: str = "1M", interval: str | 
         raise HTTPException(status_code=e.code, detail=f"sandbox {e.code}: {body or e.reason}")
     except Exception as e:
         # Sandbox unreachable / not deployed / timeout.
+        raise HTTPException(status_code=502, detail=f"sandbox unavailable: {e}")
+
+
+@router.get("/stocks/{ticker}/strategy/{slug}")
+def strategy_chart(ticker: str, slug: str, range: str = "1M", interval: str | None = None,
+                   start: str | None = None, end: str | None = None):
+    """Run an IDE strategy over the ticker's bars; returns its plotted line(s) and
+    buy/sell signals for the chart (same series shape as /custom, plus signals).
+
+    Fetches a WARMUP buffer before the display window (fetch_strategy_bars) so
+    the strategy's rolling indicators + trade-tracker state are already primed
+    when the display window starts, instead of resetting to flat on every
+    range/ticker switch. The sandbox trims its output to display_start.
+    """
+    try:
+        bars, display_start = indicators_service.fetch_strategy_bars(ticker, range, interval, start, end)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        return sandbox_client.run_strategy(slug, bars, display_start)
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode(errors="replace")[:600]
+        except Exception:
+            body = ""
+        raise HTTPException(status_code=e.code, detail=f"sandbox {e.code}: {body or e.reason}")
+    except Exception as e:
         raise HTTPException(status_code=502, detail=f"sandbox unavailable: {e}")
