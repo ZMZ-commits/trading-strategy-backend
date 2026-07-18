@@ -288,3 +288,10 @@ def cancel_backtest(dataset_id: str, backtest_id: str) -> dict:
         meta["cancel_requested"] = True
         p.write_text(json.dumps(meta, indent=2))
     return meta
+
+
+def delete_backtest(dataset_id: str, backtest_id: str) -> None:
+    p = _backtests_dir(dataset_id) / f"{backtest_id}.json"
+    if not p.exists():
+        raise HTTPException(status_code=404, detail=f"backtest '{backtest_id}' not found")
+    p.unlink()
