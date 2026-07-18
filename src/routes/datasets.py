@@ -75,3 +75,9 @@ async def get_backtest(dataset_id: str, backtest_id: str):
 @router.post("/datasets/{dataset_id}/backtests/{backtest_id}/cancel")
 async def cancel_backtest(dataset_id: str, backtest_id: str):
     return dataset_service.cancel_backtest(dataset_id, backtest_id)
+
+
+@router.delete("/datasets/{dataset_id}/backtests/{backtest_id}")
+async def delete_backtest(dataset_id: str, backtest_id: str):
+    dataset_service.delete_backtest(dataset_id, backtest_id)
+    return {"deleted": backtest_id}
