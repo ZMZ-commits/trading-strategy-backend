@@ -84,11 +84,8 @@ async def _run(job_id: str, ticker: str, interval_yf: str) -> None:
     if meta is None:
         return
     try:
-        start_ts = pd.Timestamp(meta["_start"])
-        end_ts = pd.Timestamp(meta["_end"])
-        chunks = _chunk_ranges(start_ts, end_ts, CHUNK_DAYS.get(interval_yf, 730))
-
-        meta.update(status="running", progress={"done": 0, "total": len(chunks)}, _touched=time.time())
+        chunks = meta["_chunks"]
+        meta.update(status="running", _touched=time.time())
 
         all_bars: list[dict] = []
         ticker_obj = yf.Ticker(ticker)
@@ -141,17 +138,22 @@ def create_job(ticker: str, range_: str, interval: str) -> dict:
         if start_ts < earliest:
             effective_start, clamped = earliest, True
 
+    # Work out the chunking up front so the very first response already carries
+    # the real total -- otherwise a progress ring renders against a placeholder
+    # and visibly jumps once the background task starts.
+    chunks = _chunk_ranges(effective_start, end_ts, CHUNK_DAYS.get(interval_yf, 730))
+
     job_id = uuid.uuid4().hex[:12]
     _JOBS[job_id] = {
         "id": job_id, "ticker": ticker.upper(), "range": range_.upper(), "interval": interval,
         "status": "pending", "created_at": _now(),
-        "progress": {"done": 0, "total": 1}, "row_count": 0,
+        "progress": {"done": 0, "total": len(chunks)}, "row_count": 0,
         "error": None, "cancel_requested": False,
         # Present only when the request reached past the interval's hard limit.
         "effective_start": effective_start.isoformat() if clamped else None,
         "requested_start": start_ts.isoformat(),
         "bars": [],
-        "_start": effective_start, "_end": end_ts, "_touched": time.time(),
+        "_chunks": chunks, "_touched": time.time(),
     }
 
     task = asyncio.create_task(_run(job_id, ticker, interval_yf))
