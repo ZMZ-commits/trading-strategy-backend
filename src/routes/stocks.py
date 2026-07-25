@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..services import yfinance_service, indicators_service
+from ..services import yfinance_service, indicators_service, history_job_service
 
 router = APIRouter()
 
@@ -51,3 +51,31 @@ def compute_indicators(req: ComputeIndicatorsRequest):
         return indicators_service.compute_from_bars(req.bars, req.studies)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ── Chunked history jobs ─────────────────────────────────────────────────
+# For fine intervals over long ranges, which need several sequential yfinance
+# requests and so want a progress indicator instead of one long hang.
+#
+# NOTE: `async def` (not plain `def`) so FastAPI runs these on the event loop
+# rather than a worker thread -- history_job_service calls asyncio.create_task()
+# internally, which needs a running loop in the calling context.
+
+class CreateHistoryJobRequest(BaseModel):
+    range: str
+    interval: str
+
+
+@router.post("/stocks/{ticker}/history/jobs")
+async def create_history_job(ticker: str, req: CreateHistoryJobRequest):
+    return history_job_service.create_job(ticker, req.range, req.interval)
+
+
+@router.get("/stocks/history/jobs/{job_id}")
+async def get_history_job(job_id: str):
+    return history_job_service.get_job(job_id)
+
+
+@router.post("/stocks/history/jobs/{job_id}/cancel")
+async def cancel_history_job(job_id: str):
+    return history_job_service.cancel_job(job_id)
