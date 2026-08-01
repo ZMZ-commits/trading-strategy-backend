@@ -295,3 +295,88 @@ def delete_backtest(dataset_id: str, backtest_id: str) -> None:
     if not p.exists():
         raise HTTPException(status_code=404, detail=f"backtest '{backtest_id}' not found")
     p.unlink()
+
+
+# ── Label sets (hand-marked buy/sell points on a dataset) ────────────────
+# Same storage shape as backtests -- one JSON per set under the dataset --
+# because they are the same kind of artifact: a named list of buy/sell marks
+# scoped to one dataset. Keeping the shapes aligned means the chart can render
+# a hand-labelled set and a strategy's signals through the same path.
+
+def _labels_dir(dataset_id: str) -> Path:
+    return DATASET_ROOT / dataset_id / "labels"
+
+
+def _label_path(dataset_id: str, label_id: str) -> Path:
+    return _labels_dir(dataset_id) / f"{label_id}.json"
+
+
+def create_label_set(dataset_id: str, name: str | None = None) -> dict:
+    _read_meta(dataset_id)  # 404s if the dataset doesn't exist
+    _labels_dir(dataset_id).mkdir(parents=True, exist_ok=True)
+    label_id = uuid.uuid4().hex[:12]
+    meta = {
+        "id": label_id,
+        "dataset_id": dataset_id,
+        "name": (name or "").strip() or f"Labels {datetime.now(timezone.utc):%Y-%m-%d %H:%M}",
+        "created_at": _now(),
+        "updated_at": _now(),
+        # [{time: ISO, type: 'buy'|'sell', price: float}]
+        "marks": [],
+    }
+    _label_path(dataset_id, label_id).write_text(json.dumps(meta, indent=2))
+    return meta
+
+
+def list_label_sets(dataset_id: str) -> list[dict]:
+    d = _labels_dir(dataset_id)
+    if not d.exists():
+        return []
+    out = []
+    for f in sorted(d.iterdir(), reverse=True):
+        if f.suffix == ".json":
+            try:
+                out.append(json.loads(f.read_text()))
+            except Exception:
+                continue
+    return out
+
+
+def get_label_set(dataset_id: str, label_id: str) -> dict:
+    p = _label_path(dataset_id, label_id)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail=f"label set '{label_id}' not found")
+    return json.loads(p.read_text())
+
+
+def save_label_marks(dataset_id: str, label_id: str, marks: list[dict], name: str | None = None) -> dict:
+    """Replace a set's marks wholesale. The editor holds the authoritative list
+    while you work, so a full replace avoids merge questions entirely."""
+    meta = get_label_set(dataset_id, label_id)
+    cleaned = []
+    for m in marks:
+        side = str(m.get("type", "")).lower()
+        if side not in ("buy", "sell"):
+            continue
+        try:
+            cleaned.append({
+                "time": str(m["time"]),
+                "type": side,
+                "price": float(m.get("price") or 0.0),
+            })
+        except Exception:
+            continue
+    cleaned.sort(key=lambda m: m["time"])
+    meta["marks"] = cleaned
+    if name is not None and name.strip():
+        meta["name"] = name.strip()
+    meta["updated_at"] = _now()
+    _label_path(dataset_id, label_id).write_text(json.dumps(meta, indent=2))
+    return meta
+
+
+def delete_label_set(dataset_id: str, label_id: str) -> None:
+    p = _label_path(dataset_id, label_id)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail=f"label set '{label_id}' not found")
+    p.unlink()
