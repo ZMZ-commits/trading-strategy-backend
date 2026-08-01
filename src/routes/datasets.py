@@ -81,3 +81,42 @@ async def cancel_backtest(dataset_id: str, backtest_id: str):
 async def delete_backtest(dataset_id: str, backtest_id: str):
     dataset_service.delete_backtest(dataset_id, backtest_id)
     return {"deleted": backtest_id}
+
+
+# ── Label sets ───────────────────────────────────────────────────────────
+# Hand-marked buy/sell points on a dataset. Same shape as backtest signals, so
+# the chart renders a labelled set and a strategy's output through one path.
+
+class CreateLabelSetRequest(BaseModel):
+    name: str | None = None
+
+
+class SaveLabelMarksRequest(BaseModel):
+    marks: list[dict]
+    name: str | None = None
+
+
+@router.post("/datasets/{dataset_id}/labels")
+async def create_label_set(dataset_id: str, req: CreateLabelSetRequest):
+    return dataset_service.create_label_set(dataset_id, req.name)
+
+
+@router.get("/datasets/{dataset_id}/labels")
+async def list_label_sets(dataset_id: str):
+    return {"labels": dataset_service.list_label_sets(dataset_id)}
+
+
+@router.get("/datasets/{dataset_id}/labels/{label_id}")
+async def get_label_set(dataset_id: str, label_id: str):
+    return dataset_service.get_label_set(dataset_id, label_id)
+
+
+@router.put("/datasets/{dataset_id}/labels/{label_id}")
+async def save_label_marks(dataset_id: str, label_id: str, req: SaveLabelMarksRequest):
+    return dataset_service.save_label_marks(dataset_id, label_id, req.marks, req.name)
+
+
+@router.delete("/datasets/{dataset_id}/labels/{label_id}")
+async def delete_label_set(dataset_id: str, label_id: str):
+    dataset_service.delete_label_set(dataset_id, label_id)
+    return {"deleted": label_id}
