@@ -40,6 +40,17 @@ def _sma(s, n): return s.rolling(n).mean()
 def _ema(s, n): return s.ewm(span=n, adjust=False).mean()
 
 
+def _donchian(high, low, entry_n=20, exit_n=10):
+    """Donchian channel. Both bands are SHIFTED one bar, so a bar can never
+    break out of its own high/low -- the value at bar i reflects only the bars
+    before it. Identical to tsp.indicators.donchian (same defaults, same shift)
+    so the plotted channel is exactly what a strategy calling ctx.donchian()
+    sees; a chart that disagreed with the strategy would be worse than none.
+    The bands are deliberately asymmetric (20 up / 10 down): that is the
+    breakout convention -- enter on a longer high, exit on a shorter low."""
+    return high.rolling(entry_n).max().shift(1), low.rolling(exit_n).min().shift(1)
+
+
 def _rsi(close, n=14):
     delta = close.diff()
     gain = delta.clip(lower=0).ewm(alpha=1 / n, adjust=False).mean()
@@ -209,6 +220,8 @@ def compute(ticker: str, range_: str, studies: list[str], interval_override: str
                 k, d = _stoch(h, l, c); add("stoch_k", k); add("stoch_d", d)
             elif s == "squeeze":
                 mom, on = _squeeze(h, l, c); add("squeeze_mom", mom); add("squeeze_on", on)
+            elif s == "donchian":
+                up, lo = _donchian(h, l); add("donchian_upper", up); add("donchian_lower", lo)
         except Exception:
             continue
 
@@ -255,6 +268,8 @@ def compute_from_bars(bars: list[dict], studies: list[str]) -> dict:
                 k, d = _stoch(h, l, c); add("stoch_k", k); add("stoch_d", d)
             elif s == "squeeze":
                 mom, on = _squeeze(h, l, c); add("squeeze_mom", mom); add("squeeze_on", on)
+            elif s == "donchian":
+                up, lo = _donchian(h, l); add("donchian_upper", up); add("donchian_lower", lo)
         except Exception:
             continue
 
