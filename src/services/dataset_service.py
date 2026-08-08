@@ -380,3 +380,61 @@ def delete_label_set(dataset_id: str, label_id: str) -> None:
     if not p.exists():
         raise HTTPException(status_code=404, detail=f"label set '{label_id}' not found")
     p.unlink()
+
+
+# ── Drawings (hand-drawn chart annotations) ──────────────────────────────
+# One collection per dataset rather than named sets: unlike label sets, you
+# don't compare two sets of drawings against each other -- they're markup on
+# the chart, so a single canvas per dataset is the honest model.
+
+def _drawings_path(dataset_id: str) -> Path:
+    return DATASET_ROOT / dataset_id / "drawings.json"
+
+
+_DRAWING_KINDS = {"box", "hline", "arrow-up", "arrow-down", "text"}
+
+
+def get_drawings(dataset_id: str) -> list[dict]:
+    _read_meta(dataset_id)  # 404s if the dataset doesn't exist
+    p = _drawings_path(dataset_id)
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return []
+
+
+def save_drawings(dataset_id: str, drawings: list[dict]) -> list[dict]:
+    """Replace the dataset's drawings wholesale -- the editor holds the
+    authoritative list while you draw, so a full replace avoids merge
+    questions entirely (same reasoning as label marks)."""
+    _read_meta(dataset_id)
+    cleaned: list[dict] = []
+    for d in drawings:
+        kind = str(d.get("kind", ""))
+        if kind not in _DRAWING_KINDS:
+            continue
+        try:
+            item = {
+                "id": str(d.get("id") or uuid.uuid4().hex[:8]),
+                "kind": kind,
+                "t1": str(d["t1"]),
+                "p1": float(d["p1"]),
+            }
+        except Exception:
+            continue  # an anchor-less shape can't be drawn; drop it
+        # Boxes need a second corner; the rest are single-anchor.
+        if d.get("t2") is not None and d.get("p2") is not None:
+            try:
+                item["t2"] = str(d["t2"])
+                item["p2"] = float(d["p2"])
+            except Exception:
+                pass
+        if d.get("text"):
+            item["text"] = str(d["text"])[:120]
+        if d.get("color"):
+            item["color"] = str(d["color"])[:32]
+        cleaned.append(item)
+    _drawings_path(dataset_id).write_text(json.dumps(cleaned, indent=2))
+    return cleaned
