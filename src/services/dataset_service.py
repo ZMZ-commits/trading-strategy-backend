@@ -380,3 +380,69 @@ def delete_label_set(dataset_id: str, label_id: str) -> None:
     if not p.exists():
         raise HTTPException(status_code=404, detail=f"label set '{label_id}' not found")
     p.unlink()
+
+
+# ── Drawings (hand-drawn chart annotations) ──────────────────────────────
+# One collection per dataset rather than named sets: unlike label sets, you
+# don't compare two sets of drawings against each other -- they're markup on
+# the chart, so a single canvas per dataset is the honest model.
+
+def _drawings_path(dataset_id: str) -> Path:
+    return DATASET_ROOT / dataset_id / "drawings.json"
+
+
+_DRAWING_KINDS = {
+    "trendline", "ray", "hline", "vline", "rect", "fib",
+    "long", "short", "text", "arrow-up", "arrow-down", "box",
+}
+
+
+def get_drawings(dataset_id: str) -> list[dict]:
+    _read_meta(dataset_id)  # 404s if the dataset doesn't exist
+    p = _drawings_path(dataset_id)
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return []
+
+
+def save_drawings(dataset_id: str, drawings: list[dict]) -> list[dict]:
+    """Replace the dataset's drawings wholesale -- the editor holds the
+    authoritative list while you draw, so a full replace avoids merge
+    questions entirely (same reasoning as label marks).
+
+    Shapes are stored as a list of {t, p} anchor points rather than fixed
+    t1/p1/t2/p2 fields, so a two-point trendline, a one-point level and a
+    three-level position tool all use one schema."""
+    _read_meta(dataset_id)
+    cleaned: list[dict] = []
+    for d in drawings:
+        kind = str(d.get("kind", ""))
+        if kind not in _DRAWING_KINDS:
+            continue
+        pts = []
+        for pt in (d.get("points") or []):
+            try:
+                pts.append({"t": str(pt["t"]), "p": float(pt["p"])})
+            except Exception:
+                continue
+        if not pts:
+            continue  # an anchor-less shape can't be drawn
+        item: dict = {
+            "id": str(d.get("id") or uuid.uuid4().hex[:8]),
+            "kind": kind,
+            "points": pts,
+        }
+        for key, cast in (("text", str), ("color", str), ("width", int), ("stop", float), ("target", float)):
+            if d.get(key) not in (None, ""):
+                try:
+                    item[key] = cast(d[key])
+                except Exception:
+                    pass
+        if isinstance(item.get("text"), str):
+            item["text"] = item["text"][:200]
+        cleaned.append(item)
+    _drawings_path(dataset_id).write_text(json.dumps(cleaned, indent=2))
+    return cleaned
