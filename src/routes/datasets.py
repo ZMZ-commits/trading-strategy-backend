@@ -120,3 +120,19 @@ async def save_label_marks(dataset_id: str, label_id: str, req: SaveLabelMarksRe
 async def delete_label_set(dataset_id: str, label_id: str):
     dataset_service.delete_label_set(dataset_id, label_id)
     return {"deleted": label_id}
+
+
+# ── Drawings ─────────────────────────────────────────────────────────────
+
+class SaveDrawingsRequest(BaseModel):
+    drawings: list[dict]
+
+
+@router.get("/datasets/{dataset_id}/drawings")
+async def get_drawings(dataset_id: str):
+    return {"drawings": dataset_service.get_drawings(dataset_id)}
+
+
+@router.put("/datasets/{dataset_id}/drawings")
+async def save_drawings(dataset_id: str, req: SaveDrawingsRequest):
+    return {"drawings": dataset_service.save_drawings(dataset_id, req.drawings)}
